@@ -59,8 +59,7 @@ const ProteinsSelector = ({ proteins, maxSelection, onSelect }: ProteinsSelector
         Escolha {maxSelection === 1 ? 'a proteína' : 'as proteínas'} 
         {maxSelection > 1 && <span className="text-sm ml-2">({selectedProteins.length}/{maxSelection})</span>}
       </h3>
-      
-      <div className="grid grid-cols-2 gap-3 mt-4">
+        <div className="grid grid-cols-1 gap-3 mt-4">
         {proteins.map((protein) => (
           <div 
             key={protein.id} 

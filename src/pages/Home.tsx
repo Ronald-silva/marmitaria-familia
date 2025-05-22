@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { fetchCardapioByTipo, fetchConfiguracoes, savePedido } from '@/lib/supabaseServices';
+import { fetchCardapioByTipo, fetchConfiguracoes, savePedido, CardapioItem } from '@/lib/supabaseServices';
 import MarmitaSelector from '@/components/MarmitaSelector';
 import ProteinsSelector from '@/components/ProteinsSelector';
 import SidesSelector from '@/components/SidesSelector';
@@ -13,9 +12,9 @@ import { useToast } from '@/components/ui/use-toast';
 
 const Home = () => {
   // Estados para os dados do cardápio
-  const [proteinas, setProteinas] = useState<any[]>([]);
-  const [acompanhamentos, setAcompanhamentos] = useState<any[]>([]);
-  const [saladas, setSaladas] = useState<any[]>([]);
+  const [proteinas, setProteinas] = useState<CardapioItem[]>([]);
+  const [acompanhamentos, setAcompanhamentos] = useState<CardapioItem[]>([]);
+  const [saladas, setSaladas] = useState<CardapioItem[]>([]);
   
   // Estados para configurações
   const [config, setConfig] = useState<Record<string, string>>({
@@ -105,17 +104,27 @@ const Home = () => {
     setFormaPagamento(method);
     setTroco(trocoInfo);
   };
-  
-  // Verificar se o formulário é válido
+    // Verificar se o formulário é válido
   const isFormValid = () => {
-    // Verificar se pelo menos uma proteína está selecionada
+    // Verificar quantidade
+    if (!quantidade || quantidade < 1) return false;
+
+    // Verificar proteínas
     if (proteinasSelecionadas.length === 0) return false;
-    
-    // Se for marmita grande, precisa de 2 proteínas
     if (tipoMarmita === 'grande' && proteinasSelecionadas.length < 2) return false;
+    if (tipoMarmita === 'media' && proteinasSelecionadas.length > 1) return false;
     
-    // Verificar se o endereço foi informado
+    // Verificar endereço
     if (!endereco.trim()) return false;
+    if (endereco.length < 10) return false; // Endereço muito curto
+
+    // Calcular total para validação do troco
+    const total = calcularTotal();
+    
+    // Verificar forma de pagamento
+    if (formaPagamento === 'dinheiro' && troco && troco.para < total) {
+      return false; // Valor para troco menor que o total
+    }
     
     return true;
   };
@@ -152,22 +161,62 @@ const Home = () => {
     
     return encodeURIComponent(message);
   };
-  
+    // Calcular o total do pedido
+  const calcularTotal = () => {
+    const subtotal = (precoMarmita * quantidade) + (addAgua ? parseFloat(config.preco_agua) : 0);
+    return subtotal + parseFloat(config.taxa_entrega);
+  };
+
   // Enviar pedido
   const handleSubmit = async () => {
-    if (!isFormValid()) {
+    const total = calcularTotal();
+
+    // Validações específicas com mensagens detalhadas
+    if (!quantidade || quantidade < 1) {
       toast({
         variant: "destructive",
-        title: "Formulário incompleto",
-        description: "Preencha todos os campos obrigatórios."
+        title: "Quantidade inválida",
+        description: "Por favor, selecione pelo menos uma marmita."
       });
       return;
     }
-    
-    try {
-      // Salvar pedido no banco (opcional)
-      const subtotal = (precoMarmita * quantidade) + (addAgua ? parseFloat(config.preco_agua) : 0);
-      const total = subtotal + parseFloat(config.taxa_entrega);
+
+    if (proteinasSelecionadas.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Proteína não selecionada",
+        description: tipoMarmita === 'grande' 
+          ? "Selecione duas proteínas para a marmita grande."
+          : "Selecione uma proteína para a marmita."
+      });
+      return;
+    }
+
+    if (!endereco.trim() || endereco.length < 10) {
+      toast({
+        variant: "destructive",
+        title: "Endereço inválido",
+        description: "Forneça um endereço completo para entrega."
+      });
+      return;
+    }
+
+    if (formaPagamento === 'dinheiro' && troco && troco.para < total) {
+      toast({
+        variant: "destructive",
+        title: "Valor para troco inválido",
+        description: `O valor precisa ser maior que o total do pedido (R$ ${total.toFixed(2)}).`
+      });
+      return;
+    }
+      try {
+      // Exibir toast de carregamento
+      toast({
+        title: "Processando pedido",
+        description: "Aguarde enquanto salvamos seu pedido..."
+      });
+
+      const total = calcularTotal();
       
       const pedidoData = {
         cliente: "Cliente via site",
@@ -181,27 +230,47 @@ const Home = () => {
           acompanhamentos: acompanhamentosSelecionados,
           saladas: saladasSelecionadas,
           agua: addAgua,
-          troco: troco
+          troco: troco,
+          data_pedido: new Date().toISOString(),
+          valor_unitario: precoMarmita,
+          taxa_entrega: parseFloat(config.taxa_entrega)
         }
       };
       
-      await savePedido(pedidoData);
+      // Salvar pedido no banco
+      const resultado = await savePedido(pedidoData);
+      
+      if (!resultado.success) {
+        throw new Error(resultado.error || 'Falha ao salvar o pedido');
+      }
       
       // Montar URL do WhatsApp e redirecionar
       const message = formatWhatsappMessage();
       const whatsappUrl = `https://wa.me/${config.telefone_whatsapp}?text=${message}`;
+      
+      // Limpar formulário
+      setProteinasSelecionadas([]);
+      setAcompanhamentosSelecionados([]);
+      setSaladasSelecionadas([]);
+      setAddAgua(false);
+      setTroco(undefined);
+      setEndereco('');
+      
+      // Abrir WhatsApp em nova aba
       window.open(whatsappUrl, '_blank');
       
       toast({
-        title: "Pedido enviado",
-        description: "Você será redirecionado para o WhatsApp."
+        title: "Pedido enviado com sucesso!",
+        description: "Você será redirecionado para o WhatsApp para finalizar seu pedido."
       });
     } catch (error) {
       console.error("Erro ao enviar pedido:", error);
       toast({
         variant: "destructive",
         title: "Erro ao enviar pedido",
-        description: "Tente novamente mais tarde."
+        description: error instanceof Error 
+          ? error.message 
+          : "Ocorreu um erro inesperado. Por favor, tente novamente mais tarde."
       });
     }
   };
@@ -228,13 +297,13 @@ const Home = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="container mx-auto px-4">
-        <h1 className="text-3xl font-bold text-center text-green-700 mb-8">Marmitaria Família</h1>
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
+      <div className="w-full max-w-[85%] sm:max-w-xl lg:max-w-2xl mx-auto py-4 sm:py-6 px-2 sm:px-4">
+        <h1 className="text-lg sm:text-xl font-bold text-center text-green-700 mb-4">Marmitaria Família</h1>
         
-        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Coluna esquerda */}
-          <div className="lg:col-span-2 space-y-6">
+        <div className="grid grid-cols-1 gap-3">
+          {/* Seleção principal */}
+          <div className="space-y-3">
             <MarmitaSelector 
               precoMedia={parseFloat(config.preco_marmita_media)} 
               precoGrande={parseFloat(config.preco_marmita_grande)}
@@ -246,21 +315,25 @@ const Home = () => {
               maxSelection={maxProteinas}
               onSelect={setProteinasSelecionadas}
             />
+          </div>
+
+          {/* Seleções secundárias */}
+          <div className="space-y-3">
+            <SidesSelector 
+              title="Acompanhamentos" 
+              items={acompanhamentos}
+              onSelect={setAcompanhamentosSelecionados}
+            />
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <SidesSelector 
-                title="Acompanhamentos" 
-                items={acompanhamentos}
-                onSelect={setAcompanhamentosSelecionados}
-              />
-              
-              <SidesSelector 
-                title="Saladas" 
-                items={saladas}
-                onSelect={setSaladasSelecionadas}
-              />
-            </div>
-            
+            <SidesSelector 
+              title="Saladas" 
+              items={saladas}
+              onSelect={setSaladasSelecionadas}
+            />
+          </div>
+
+          {/* Opções adicionais */}
+          <div className="space-y-3">
             <WaterOption 
               precoAgua={parseFloat(config.preco_agua)}
               onToggle={handleWaterToggle}
@@ -277,28 +350,26 @@ const Home = () => {
               value={endereco}
             />
           </div>
-          
-          {/* Coluna direita - resumo */}
-          <div className="lg:col-span-1">
-            <div className="sticky top-6">
-              <OrderSummary 
-                tipoMarmita={tipoMarmita}
-                quantidade={quantidade}
-                precoMarmita={precoMarmita}
-                proteinas={proteinasSelecionadas}
-                acompanhamentos={acompanhamentosSelecionados}
-                saladas={saladasSelecionadas}
-                agua={addAgua}
-                precoAgua={parseFloat(config.preco_agua)}
-                formaPagamento={formaPagamento}
-                troco={troco}
-                endereco={endereco}
-                taxaEntrega={parseFloat(config.taxa_entrega)}
-                telefoneWhatsapp={config.telefone_whatsapp}
-                onSubmit={handleSubmit}
-                isFormValid={isFormValid()}
-              />
-            </div>
+
+          {/* Resumo do pedido */}
+          <div className="mt-2">
+            <OrderSummary 
+              tipoMarmita={tipoMarmita}
+              quantidade={quantidade}
+              precoMarmita={precoMarmita}
+              proteinas={proteinasSelecionadas}
+              acompanhamentos={acompanhamentosSelecionados}
+              saladas={saladasSelecionadas}
+              agua={addAgua}
+              precoAgua={parseFloat(config.preco_agua)}
+              formaPagamento={formaPagamento}
+              troco={troco}
+              endereco={endereco}
+              taxaEntrega={parseFloat(config.taxa_entrega)}
+              telefoneWhatsapp={config.telefone_whatsapp}
+              onSubmit={handleSubmit}
+              isFormValid={isFormValid()}
+            />
           </div>
         </div>
       </div>

@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -31,24 +30,24 @@ const SidesSelector = ({ title, items, onSelect }: SidesSelectorProps) => {
   };
 
   return (
-    <Card className="p-6 shadow-md">
-      <h3 className="text-lg font-semibold mb-4 text-center">{title}</h3>
-      
-      <div className="grid grid-cols-2 gap-3">
+    <Card className="p-3 sm:p-4 shadow-sm w-full bg-white/80 backdrop-blur-sm">
+      <h3 className="text-sm sm:text-base font-medium mb-3 text-center text-green-800">{title}</h3>
+      <div className="grid grid-cols-1 gap-2">
         {items.map((item) => (
           <div 
             key={item.id} 
-            className="flex items-center space-x-2 border rounded p-2 cursor-pointer hover:bg-gray-50"
+            className="flex items-center gap-2 border rounded-md p-2 cursor-pointer hover:bg-gray-50/80 transition-colors"
             onClick={() => handleToggleItem(item.nome)}
           >
             <Checkbox 
               id={`item-${item.id}`}
               checked={selectedItems.includes(item.nome)}
               onCheckedChange={() => handleToggleItem(item.nome)}
+              className="data-[state=checked]:bg-green-600 data-[state=checked]:border-green-600"
             />
             <Label
               htmlFor={`item-${item.id}`}
-              className="flex-1 cursor-pointer"
+              className="flex-1 cursor-pointer text-sm sm:text-base"
             >
               {item.nome}
             </Label>
@@ -57,7 +56,7 @@ const SidesSelector = ({ title, items, onSelect }: SidesSelectorProps) => {
       </div>
       
       {items.length === 0 && (
-        <p className="text-center text-muted-foreground mt-2">
+        <p className="text-center text-muted-foreground text-sm mt-2">
           Nenhum item disponível
         </p>
       )}
